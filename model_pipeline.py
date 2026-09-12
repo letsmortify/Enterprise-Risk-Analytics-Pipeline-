@@ -3,11 +3,12 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
+import shap
 
 def run_risk_pipeline():
-    print("=" * 50)
-    print("STARTING CREDIT RISK MODEL & DRIFT PIPELINE")
-    print("=" * 50)
+    print("=" * 60)
+    print("STARTING ENTERPRISE RISK MODEL, PSI & SHAP EXPLAINABILITY PIPELINE")
+    print("=" * 60)
 
     # 1. Simulate Historical Portfolio Data (1000 SMEs)
     np.random.seed(42)
@@ -30,7 +31,7 @@ def run_risk_pipeline():
     y = data['Default_Flag']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
-    # 3. Fit Baseline Logistic Regression (Regulatory Champion)
+    # 3. Fit Champion Logistic Regression Model
     model = LogisticRegression()
     model.fit(X_train, y_train)
 
@@ -43,32 +44,47 @@ def run_risk_pipeline():
     print(f" -> Validation ROC-AUC Score: {auc_score:.4f}")
     print(f" -> Validation Gini Coefficient: {gini_score:.4f}")
 
-    # 5. Simulate Production PSI (Population Stability Index) Drift
+    # 5. Production Monitoring: PSI (Population Stability Index) Drift
     print("\n[PRODUCTION MONITORING]")
     baseline_dscr = X_train['DSCR']
     production_dscr = np.random.uniform(0.5, 1.8, 200) # Economic Stress Drift
 
-    # Binning for PSI
     bins = np.percentile(baseline_dscr, np.linspace(0, 100, 6))
     base_counts, _ = np.histogram(baseline_dscr, bins=bins)
     prod_counts, _ = np.histogram(production_dscr, bins=bins)
 
     base_pct = base_counts / len(baseline_dscr)
-    prod_pct = np.where(prod_counts == 0, 0.0001, prod_counts / len(production_dscr)) # Avoid div by 0
+    prod_pct = np.where(prod_counts == 0, 0.0001, prod_counts / len(production_dscr))
 
     psi_val = np.sum((prod_pct - base_pct) * np.log(prod_pct / base_pct))
     print(f" -> Calculated Portfolio PSI (DSCR Feature): {psi_val:.4f}")
 
     if psi_val > 0.25:
-        print(" -> ALERT: High Population Drift Detected (PSI > 0.25)! Action Required: Trigger Re-calibration.")
+        print(" -> ALERT: High Population Drift Detected (PSI > 0.25)! Trigger Re-calibration.")
     elif psi_val > 0.10:
         print(" -> WARNING: Moderate Population Drift (0.10 < PSI <= 0.25). Monitor closely.")
     else:
         print(" -> STATUS: Portfolio Stable (PSI <= 0.10).")
 
-    print("\n" + "=" * 50)
-    print("PIPELINE EXECUTED SUCCESSFULLY")
-    print("=" * 50)
+    # 6. Model Governance: SHAP Explainability Engine
+    print("\n[MODEL GOVERNANCE & EXPLAINABILITY (SHAP)]")
+    explainer = shap.LinearExplainer(model, X_train)
+    shap_values = explainer.shap_values(X_test)
+    
+    # Calculate Mean Absolute SHAP values for global feature ranking
+    mean_abs_shap = np.abs(shap_values).mean(axis=0)
+    feature_importance = pd.DataFrame({
+        'Feature': X_test.columns,
+        'Mean_SHAP_Impact': mean_abs_shap
+    }).sort_values(by='Mean_SHAP_Impact', ascending=False)
+
+    print(" -> Global Feature Risk Attribution (Top Drivers of Credit Score):")
+    for idx, row in feature_importance.iterrows():
+        print(f"    - {row['Feature']:<18}: SHAP Impact = {row['Mean_SHAP_Impact']:.4f}")
+
+    print("\n" + "=" * 60)
+    print("PIPELINE EXECUTED & SHAP AUDIT COMPLETED SUCCESSFULLY")
+    print("=" * 60)
 
 if __name__ == "__main__":
     run_risk_pipeline()
