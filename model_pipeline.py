@@ -85,19 +85,21 @@ def run_risk_pipeline():
     test_df = data.loc[X_test.index].copy()
     test_df['Baseline_PD'] = y_pred_proba
 
-    # Apply Macro Shock: Scenario = GDP drops by 2%, Interest Rate hikes by 150bps
-    # Shift log-odds proportional to macro severity multiplier (1.45x risk expansion)
-    stressed_logit = logit[X_test.index] + np.log(1.45)
-    test_df['Stressed_PD'] = 1 / (1 + np.exp(-stressed_logit))
+    # Apply Macro Shock: Log-odds expansion across test features directly
+    # A 1.45x risk expansion factor applied to base log-odds
+    base_log_odds = np.log(test_df['Baseline_PD'] / (1 - test_df['Baseline_PD'] + 1e-15))
+    stressed_log_odds = base_log_odds + np.log(1.45)
+    test_df['Stressed_PD'] = 1 / (1 + np.exp(-stressed_log_odds))
 
-    # SICR Trigger: If Stressed PD increases by > 50% relative to baseline, shift to Stage 2 (Lifetime ECL)
-    test_df['SICR_Flag'] = (test_df['Stressed_PD'] / test_df['Baseline_PD'] > 1.50).astype(int)
+    # SICR Trigger: If Stressed PD increases by > 20% relative to baseline, shift to Stage 2 (Lifetime ECL)
+    test_df['SICR_Flag'] = (test_df['Stressed_PD'] / test_df['Baseline_PD'] > 1.20).astype(int)
 
     # ECL Calculations ($)
-    # Stage 1: 12-Month ECL | Stage 2: Lifetime ECL (Simulated as 2.8x 12M ECL duration multiplier)
+    # Stage 1: 12-Month ECL | Stage 2: Lifetime ECL (2.8x multiplier for extended tenure exposure)
     test_df['Baseline_ECL'] = test_df['Baseline_PD'] * test_df['LGD'] * test_df['EAD']
     test_df['Stressed_ECL'] = np.where(
         test_df['SICR_Flag'] == 1,
+
         test_df['Stressed_PD'] * test_df['LGD'] * test_df['EAD'] * 2.8, # Lifetime multiplier
         test_df['Stressed_PD'] * test_df['LGD'] * test_df['EAD']
     )
